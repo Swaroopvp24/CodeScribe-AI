@@ -67,6 +67,7 @@ let scrapedProblemData = null;
 const modalElement = document.getElementById('gh-commit-modal');
 const formElement = document.getElementById('gh-fileForm');
 
+// Handle closing the popup
 document.getElementById('gh-cancelBtn').onclick = () => {
   modalElement.style.display = 'none';
 };
@@ -75,7 +76,7 @@ document.getElementById('gh-cancelBtn').onclick = () => {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === "OPEN_SYNC_MODAL") {
     const data = message.payload;
-    console.log("Data package delivered safely to Content script:", data);
+    console.log("Data package delivered safely via Option B:", data);
     
     scrapedProblemData = data;
 
@@ -93,8 +94,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
+// 3. Handle data collection when "Commit & Push" is clicked
 formElement.onsubmit = (e) => {
-  e.preventDefault();
+  e.preventDefault(); // <-- THIS STOPS THE BROWSER DEFAULT REFRESH
+  
   const filename = document.getElementById('gh-filename').value;
   const ext = document.getElementById('gh-extension-select').value;
   const notes = document.getElementById('gh-notesinp').value.trim();
@@ -102,9 +105,15 @@ formElement.onsubmit = (e) => {
   const paddedId = String(scrapedProblemData.questionId).padStart(4, '0');
   const repoPath = `Leetcode/${paddedId}_${scrapedProblemData.titleSlug}/${filename}.${ext}`;
 
-  console.log("FINAL INTEGRATION METADATA PACKAGE GENERATED:");
-  console.log("Path Destination ->", repoPath);
+  console.log("=========================================");
+  console.log("READY FOR GITHUB SYNC:");
+  console.log("Target Path ->", repoPath);
   console.log("Notes ->", notes || "None");
+  console.log("Code Length ->", scrapedProblemData.code.length, "chars");
+  console.log("Code Content ->\n", scrapedProblemData.code);
+  console.log("=========================================");
 
+  // Clear notes field and close the window cleanly
+  document.getElementById('gh-notesinp').value = "";
   modalElement.style.display = 'none';
 };
