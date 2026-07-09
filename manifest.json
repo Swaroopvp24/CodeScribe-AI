@@ -8,16 +8,28 @@
     "webRequest"
   ],
   "host_permissions": [
-    "https://*.leetcode.com/*"
+    "https://*.leetcode.com/*",
+    "https://neetcode.io/*"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": ["https://*.leetcode.com/*"],
+      "matches": [
+        "https://*.leetcode.com/*",
+        "https://neetcode.io/*"
+      ],
       "js": ["content.js"],
       "run_at": "document_end"
+    },
+    {
+      "matches": [
+        "https://neetcode.io/*"
+      ],
+      "js": ["neetcode-inject.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
     }
   ]
 }

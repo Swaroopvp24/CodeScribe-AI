@@ -72,17 +72,17 @@ document.getElementById('gh-cancelBtn').onclick = () => {
   modalElement.style.display = 'none';
 };
 
-// 2. Listen for the secure message coming from background.js
+// 2. Listen for the secure message coming from background.js (LEETCODE ONLY)
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === "OPEN_SYNC_MODAL") {
     const data = message.payload;
-    console.log("Data package delivered safely via Option B:", data);
+    console.log("Data package delivered safely via LeetCode background:", data);
     
     scrapedProblemData = data;
 
-    // Normalizing file formats
-    let mappedExtension = data.lang;
+    let mappedExtension = data.lang.toLowerCase();
     if (mappedExtension.startsWith('python')) mappedExtension = 'py';
+    if (mappedExtension.startsWith('c++')) mappedExtension = 'cpp';
 
     const paddedId = String(data.questionId).padStart(4, '0');
 
@@ -94,26 +94,96 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-// 3. Handle data collection when "Commit & Push" is clicked
+// 3. NEETCODE INJECTION INTERCEPTOR (Triggers inside NeetCode page execution sandbox)
+// if (window.location.hostname.includes("neetcode.io")) {
+//   const scriptCode = `
+//     (function() {
+//       const originalFetch = window.fetch;
+//       window.fetch = async function(...args) {
+//         const response = await originalFetch(...args);
+//         const url = args[0];
+        
+//         if (typeof url === 'string' && url.includes('executeCodeFunctionHttp')) {
+//           try {
+//             // Clone response so we don't disrupt NeetCode's client runner
+//             const resClone = response.clone();
+//             const resData = await resClone.json();
+            
+//             // Check if the response matches "Accepted" status
+//             if (resData?.data?.status?.description === "Accepted") {
+//               const reqBody = JSON.parse(args[1].body);
+              
+//               // Send data packet cleanly into content.js via DOM event hooks
+//               window.dispatchEvent(new CustomEvent("NEETCODE_SYNC_ACCEPTED", {
+//                 detail: {
+//                   code: reqBody.data.rawCode,
+//                   lang: reqBody.data.lang,
+//                   titleSlug: reqBody.data.problemId
+//                 }
+//               }));
+//             }
+//           } catch (e) {
+//             console.error("Sync Interceptor Error:", e);
+//           }
+//         }
+//         return response;
+//       };
+//     })();
+//   `;
+
+//   const script = document.createElement('script');
+//   script.textContent = scriptCode;
+//   (document.head || document.documentElement).appendChild(script);
+//   script.remove();
+// }
+
+// 4. Handle Incoming Event Packet Captured from the NeetCode Injector
+window.addEventListener("NEETCODE_SYNC_ACCEPTED", (event) => {
+  const data = event.detail;
+  console.log("Data package delivered safely via NeetCode Page Interceptor:", data);
+
+  scrapedProblemData = {
+    code: data.code,
+    lang: data.lang,
+    questionId: "NC", // Marker for NeetCode tracking
+    titleSlug: data.titleSlug
+  };
+
+  let mappedExtension = data.lang.toLowerCase();
+  if (mappedExtension.startsWith('python')) mappedExtension = 'py';
+  if (mappedExtension.startsWith('c++')) mappedExtension = 'cpp';
+
+  document.getElementById("gh-filename").value = `attempt_1`;
+  document.getElementById("gh-extension-select").value = mappedExtension;
+  document.querySelector("#neetcode-gh-modal-root h2").innerText = `🎉 Solved (NeetCode): ${data.titleSlug}`;
+
+  modalElement.style.display = 'flex';
+});
+
+// 5. Handle data collection when "Commit & Push" is clicked (Handles both platforms)
 formElement.onsubmit = (e) => {
-  e.preventDefault(); // <-- THIS STOPS THE BROWSER DEFAULT REFRESH
+  e.preventDefault();
   
   const filename = document.getElementById('gh-filename').value;
   const ext = document.getElementById('gh-extension-select').value;
   const notes = document.getElementById('gh-notesinp').value.trim();
 
-  const paddedId = String(scrapedProblemData.questionId).padStart(4, '0');
-  const repoPath = `Leetcode/${paddedId}_${scrapedProblemData.titleSlug}/${filename}.${ext}`;
+  let repoPath = "";
+  if (scrapedProblemData.questionId === "NC") {
+    repoPath = `Neetcode/${scrapedProblemData.titleSlug}/${filename}.${ext}`;
+  } else {
+    const paddedId = String(scrapedProblemData.questionId).padStart(4, '0');
+    repoPath = `Leetcode/${paddedId}_${scrapedProblemData.titleSlug}/${filename}.${ext}`;
+  }
 
   console.log("=========================================");
-  console.log("READY FOR GITHUB SYNC:");
+  console.log(`READY FOR GITHUB SYNC (${scrapedProblemData.questionId === "NC" ? "NEETCODE" : "LEETCODE"}):`);
   console.log("Target Path ->", repoPath);
   console.log("Notes ->", notes || "None");
   console.log("Code Length ->", scrapedProblemData.code.length, "chars");
   console.log("Code Content ->\n", scrapedProblemData.code);
   console.log("=========================================");
 
-  // Clear notes field and close the window cleanly
   document.getElementById('gh-notesinp').value = "";
   modalElement.style.display = 'none';
 };
