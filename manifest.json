@@ -3,6 +3,7 @@
   "name": "LeetCode & NeetCode Git Sync",
   "version": "1.2",
   "description": "Saves your coding solutions and personal notes directly to GitHub.",
+  "options_page": "options.html",
   "permissions": [
     "storage",
     "webRequest"

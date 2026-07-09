@@ -1,0 +1,38 @@
+# OS / System files
+.DS_Store
+Thumbs.db
+*.log
+
+# Dependencies
+node_modules/
+bower_components/
+
+# Build & Dist outputs (if using Webpack, Vite, Vite-plugin-web-extension, etc.)
+dist/
+build/
+out/
+*.zip
+*.crx
+*.xpi
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# Environment variables & Private Keys
+.env
+.env.local
+.env.*.local
+*.pem
+*.pfx
+
+# Testing & Coverage
+coverage/
+.jest/
+
+docxdev.text
