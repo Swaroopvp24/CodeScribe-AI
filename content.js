@@ -9,10 +9,10 @@ modalRoot.innerHTML = `
       position: fixed;
       inset: 0;
       background: rgba(0, 0, 0, 0.7);
-      display: none;
+      display: none; 
       justify-content: center;
       align-items: center;
-      z-index: 9999999;
+      z-index: 9999999; 
       font-family: -apple-system, BlinkMacSystemFont, sans-serif;
     }
     #neetcode-gh-modal-root .modal-box {
@@ -31,6 +31,42 @@ modalRoot.innerHTML = `
     #neetcode-gh-modal-root button { padding: 10px 20px; font-size: 14px; font-weight: 600; border-radius: 8px; cursor: pointer; border: none; }
     #neetcode-gh-modal-root .btn-cancel { background: #f3f4f6; color: #4b5563; }
     #neetcode-gh-modal-root .btn-submit { background: #4f46e5; color: white; }
+
+    /* CHANGED: Modern, simple style rules for the AI Option Selectors */
+    #neetcode-gh-modal-root .style-toggle-container {
+      display: flex;
+      gap: 12px;
+      margin-top: 4px;
+    }
+    #neetcode-gh-modal-root .style-option-label {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 12px;
+      border: 2px solid #e5e7eb;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 14px;
+      color: #4b5563;
+      transition: all 0.2s ease-in-out;
+    }
+    #neetcode-gh-modal-root .style-option-label:hover {
+      border-color: #cbd5e1;
+      background: #f9fafb;
+    }
+    #neetcode-gh-modal-root .style-option-label input[type="radio"] {
+      margin-right: 8px;
+      accent-color: #4f46e5;
+      cursor: pointer;
+    }
+    /* Dynamic visual wrapper highlighting the chosen option */
+    #neetcode-gh-modal-root .style-option-label:has(input:checked) {
+      border-color: #4f46e5;
+      background: #f5f3ff;
+      color: #4f46e5;
+    }
   </style>
 
   <div class="modal-overlay" id="gh-commit-modal">
@@ -50,10 +86,22 @@ modalRoot.innerHTML = `
             </select>
           </div>
         </div>
+
+        <!-- CHANGED: Swapped text-input box out for smooth visual choice selectors -->
         <div class="form-group">
-          <label for="gh-notesinp">Key Takeaways / Notes</label>
-          <textarea id="gh-notesinp" rows="4" placeholder="What caught you off guard?"></textarea>
+          <label>AI Note Complexity</label>
+          <div class="style-toggle-container">
+            <label class="style-option-label">
+              <input type="radio" name="gh-notestyle" value="concise" checked />
+              ⚡ Concise
+            </label>
+            <label class="style-option-label">
+              <input type="radio" name="gh-notestyle" value="detailed" />
+              📚 Detailed
+            </label>
+          </div>
         </div>
+
         <div class="modal-actions">
           <button type="button" class="btn-cancel" id="gh-cancelBtn">Skip Sync</button>
           <button type="submit" class="btn-submit" id="gh-submitBtn">Commit & Push</button>
@@ -77,7 +125,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === "OPEN_SYNC_MODAL") {
     const data = message.payload;
     console.log("Data package delivered safely via LeetCode background:", data);
-
+    
     scrapedProblemData = data;
 
     let mappedExtension = data.lang.toLowerCase();
@@ -93,49 +141,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     modalElement.style.display = 'flex';
   }
 });
-
-// 3. NEETCODE INJECTION INTERCEPTOR (Triggers inside NeetCode page execution sandbox)
-// if (window.location.hostname.includes("neetcode.io")) {
-//   const scriptCode = `
-//     (function() {
-//       const originalFetch = window.fetch;
-//       window.fetch = async function(...args) {
-//         const response = await originalFetch(...args);
-//         const url = args[0];
-//
-//         if (typeof url === 'string' && url.includes('executeCodeFunctionHttp')) {
-//           try {
-//             // Clone response so we don't disrupt NeetCode's client runner
-//             const resClone = response.clone();
-//             const resData = await resClone.json();
-//
-//             // Check if the response matches "Accepted" status
-//             if (resData?.data?.status?.description === "Accepted") {
-//               const reqBody = JSON.parse(args[1].body);
-//
-//               // Send data packet cleanly into content.js via DOM event hooks
-//               window.dispatchEvent(new CustomEvent("NEETCODE_SYNC_ACCEPTED", {
-//                 detail: {
-//                   code: reqBody.data.rawCode,
-//                   lang: reqBody.data.lang,
-//                   titleSlug: reqBody.data.problemId
-//                 }
-//               }));
-//             }
-//           } catch (e) {
-//             console.error("Sync Interceptor Error:", e);
-//           }
-//         }
-//         return response;
-//       };
-//     })();
-//   `;
-//
-//   const script = document.createElement('script');
-//   script.textContent = scriptCode;
-//   (document.head || document.documentElement).appendChild(script);
-//   script.remove();
-// }
 
 // 4. Handle Incoming Event Packet Captured from the NeetCode Injector
 window.addEventListener("NEETCODE_SYNC_ACCEPTED", (event) => {
@@ -163,10 +168,12 @@ window.addEventListener("NEETCODE_SYNC_ACCEPTED", (event) => {
 // 5. Handle data collection when "Commit & Push" is clicked (Handles both platforms)
 formElement.onsubmit = (e) => {
   e.preventDefault();
-
+  
   const filename = document.getElementById('gh-filename').value;
   const ext = document.getElementById('gh-extension-select').value;
-  const notes = document.getElementById('gh-notesinp').value.trim();
+  
+  // CHANGED: Pull the selected summary style value from the targeted radio selection options
+  const noteStyle = document.querySelector('input[name="gh-notestyle"]:checked').value;
 
   let repoPath = "";
   if (scrapedProblemData.questionId === "NC") {
@@ -179,7 +186,8 @@ formElement.onsubmit = (e) => {
   console.log("=========================================");
   console.log(`READY FOR GITHUB SYNC (${scrapedProblemData.questionId === "NC" ? "NEETCODE" : "LEETCODE"}):`);
   console.log("Target Path ->", repoPath);
-  console.log("Notes ->", notes || "None");
+  // CHANGED: Adjusted logs to keep tabs on selected complexity
+  console.log("AI Note Style ->", noteStyle);
   console.log("Code Length ->", scrapedProblemData.code.length, "chars");
   console.log("Code Content ->\n", scrapedProblemData.code);
   console.log("=========================================");
@@ -193,7 +201,8 @@ formElement.onsubmit = (e) => {
       action: "GENERATE_NOTES",
       payload: {
         code: scrapedProblemData.code,
-        lang: scrapedProblemData.lang
+        lang: scrapedProblemData.lang,
+        noteStyle: noteStyle // CHANGED: Injected style configuration seamlessly into payload parameters
       }
     },
     (response) => {
@@ -206,6 +215,6 @@ formElement.onsubmit = (e) => {
   );
   // ---- END NEW ----
 
-  document.getElementById('gh-notesinp').value = "";
+  // CHANGED: Removed the clearing text state handler since the text area DOM node no longer exists
   modalElement.style.display = 'none';
 };
