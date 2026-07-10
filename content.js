@@ -9,10 +9,10 @@ modalRoot.innerHTML = `
       position: fixed;
       inset: 0;
       background: rgba(0, 0, 0, 0.7);
-      display: none; 
+      display: none;
       justify-content: center;
       align-items: center;
-      z-index: 9999999; 
+      z-index: 9999999;
       font-family: -apple-system, BlinkMacSystemFont, sans-serif;
     }
     #neetcode-gh-modal-root .modal-box {
@@ -77,7 +77,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === "OPEN_SYNC_MODAL") {
     const data = message.payload;
     console.log("Data package delivered safely via LeetCode background:", data);
-    
+
     scrapedProblemData = data;
 
     let mappedExtension = data.lang.toLowerCase();
@@ -102,17 +102,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 //       window.fetch = async function(...args) {
 //         const response = await originalFetch(...args);
 //         const url = args[0];
-        
+//
 //         if (typeof url === 'string' && url.includes('executeCodeFunctionHttp')) {
 //           try {
 //             // Clone response so we don't disrupt NeetCode's client runner
 //             const resClone = response.clone();
 //             const resData = await resClone.json();
-            
+//
 //             // Check if the response matches "Accepted" status
 //             if (resData?.data?.status?.description === "Accepted") {
 //               const reqBody = JSON.parse(args[1].body);
-              
+//
 //               // Send data packet cleanly into content.js via DOM event hooks
 //               window.dispatchEvent(new CustomEvent("NEETCODE_SYNC_ACCEPTED", {
 //                 detail: {
@@ -130,7 +130,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 //       };
 //     })();
 //   `;
-
+//
 //   const script = document.createElement('script');
 //   script.textContent = scriptCode;
 //   (document.head || document.documentElement).appendChild(script);
@@ -163,7 +163,7 @@ window.addEventListener("NEETCODE_SYNC_ACCEPTED", (event) => {
 // 5. Handle data collection when "Commit & Push" is clicked (Handles both platforms)
 formElement.onsubmit = (e) => {
   e.preventDefault();
-  
+
   const filename = document.getElementById('gh-filename').value;
   const ext = document.getElementById('gh-extension-select').value;
   const notes = document.getElementById('gh-notesinp').value.trim();
@@ -183,6 +183,28 @@ formElement.onsubmit = (e) => {
   console.log("Code Length ->", scrapedProblemData.code.length, "chars");
   console.log("Code Content ->\n", scrapedProblemData.code);
   console.log("=========================================");
+
+  // ---- NEW: AI note generation (additive, doesn't affect anything above) ----
+  const fullFilename = `${filename}.${ext}`;
+  console.log(`Requesting AI notes for ${fullFilename}...`);
+
+  chrome.runtime.sendMessage(
+    {
+      action: "GENERATE_NOTES",
+      payload: {
+        code: scrapedProblemData.code,
+        lang: scrapedProblemData.lang
+      }
+    },
+    (response) => {
+      if (response?.success) {
+        console.log(`=== AI NOTES (${fullFilename}) ===\n${response.notes}`);
+      } else {
+        console.error(`AI note generation failed for ${fullFilename}:`, response?.error);
+      }
+    }
+  );
+  // ---- END NEW ----
 
   document.getElementById('gh-notesinp').value = "";
   modalElement.style.display = 'none';
