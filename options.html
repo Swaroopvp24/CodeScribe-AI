@@ -60,7 +60,31 @@
     <small>Get one free at console.groq.com</small>
   </div>
 
-  <button id="save-btn">Save Keys</button>
+  <!-- CHANGED: Added GitHub Sync Settings Configuration Form Section -->
+  <hr style="border: 0; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
+  <h2>GitHub Configuration</h2>
+  <p class="subtitle">Configure where your solution code files and notes will be securely committed.</p>
+
+  <div class="form-group">
+    <label for="gh-token">GitHub Access Token (PAT)</label>
+    <input type="password" id="gh-token" placeholder="ghp_..." />
+    <small>Requires a token with write access to your repository contents.</small>
+  </div>
+
+  <div class="form-group">
+    <label for="gh-repo">Repository Target Path</label>
+    <input type="text" id="gh-repo" placeholder="e.g., username/My-Coding-Journey" />
+    <small>Format must match: owner-name/repository-name</small>
+  </div>
+
+  <div class="form-group">
+    <label for="gh-branch">Target Branch Name</label>
+    <input type="text" id="gh-branch" placeholder="main" />
+    <small>Defaults straight to 'main' if left completely blank.</small>
+  </div>
+  <!-- END CHANGED -->
+
+  <button id="save-btn">Save Settings</button>
   <div id="status"></div>
 
   <script src="options.js"></script>
