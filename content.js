@@ -175,13 +175,17 @@ formElement.onsubmit = (e) => {
   // CHANGED: Pull the selected summary style value from the targeted radio selection options
   const noteStyle = document.querySelector('input[name="gh-notestyle"]:checked').value;
 
-  let repoPath = "";
+  // NEW: folderPath computed once, reused for both the .md and code file paths
+  let folderPath = "";
   if (scrapedProblemData.questionId === "NC") {
-    repoPath = `Neetcode/${scrapedProblemData.titleSlug}/${filename}.${ext}`;
+    folderPath = `Neetcode/${scrapedProblemData.titleSlug}`;
   } else {
     const paddedId = String(scrapedProblemData.questionId).padStart(4, '0');
-    repoPath = `Leetcode/${paddedId}_${scrapedProblemData.titleSlug}/${filename}.${ext}`;
+    folderPath = `Leetcode/${paddedId}_${scrapedProblemData.titleSlug}`;
   }
+
+  const fullFilename = `${filename}.${ext}`;
+  const repoPath = `${folderPath}/${fullFilename}`;
 
   console.log("=========================================");
   console.log(`READY FOR GITHUB SYNC (${scrapedProblemData.questionId === "NC" ? "NEETCODE" : "LEETCODE"}):`);
@@ -192,8 +196,7 @@ formElement.onsubmit = (e) => {
   console.log("Code Content ->\n", scrapedProblemData.code);
   console.log("=========================================");
 
-  // ---- NEW: AI note generation (additive, doesn't affect anything above) ----
-  const fullFilename = `${filename}.${ext}`;
+  // ---- AI note generation ----
   console.log(`Requesting AI notes for ${fullFilename}...`);
 
   chrome.runtime.sendMessage(
@@ -202,19 +205,45 @@ formElement.onsubmit = (e) => {
       payload: {
         code: scrapedProblemData.code,
         lang: scrapedProblemData.lang,
-        noteStyle: noteStyle // CHANGED: Injected style configuration seamlessly into payload parameters
+        noteStyle: noteStyle
       }
     },
     (response) => {
       if (response?.success) {
         console.log(`=== AI NOTES (${fullFilename}) ===\n${response.notes}`);
+
+        // ---- NEW: push notes + code to GitHub once notes are ready ----
+        console.log(`Pushing ${fullFilename} and notes to GitHub...`);
+
+        chrome.runtime.sendMessage(
+          {
+            action: "PUSH_TO_GITHUB",
+            payload: {
+              folderPath,
+              codePath: repoPath,
+              titleSlug: scrapedProblemData.titleSlug,
+              fullFilename,
+              noteStyle,
+              notes: response.notes,
+              code: scrapedProblemData.code
+            }
+          },
+          (pushResponse) => {
+            if (pushResponse?.success) {
+              console.log("=== GITHUB PUSH SUCCESS ===");
+              console.log("Notes file ->", pushResponse.mdPath);
+              console.log("Code file  ->", pushResponse.codePath);
+            } else {
+              console.error("GitHub push failed:", pushResponse?.error);
+            }
+          }
+        );
+        // ---- END NEW ----
       } else {
         console.error(`AI note generation failed for ${fullFilename}:`, response?.error);
       }
     }
   );
-  // ---- END NEW ----
 
-  // CHANGED: Removed the clearing text state handler since the text area DOM node no longer exists
   modalElement.style.display = 'none';
 };
