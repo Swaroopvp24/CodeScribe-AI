@@ -1,92 +1,8 @@
-// // // Listen for completed background network requests on LeetCode
-// // chrome.webRequest.onCompleted.addListener(
-// //   async function(details) {
-// //     // We target LeetCode's specific submission check endpoint
-// //     if (details.url.includes('/check/')) {
-// //       try {
-// //         // Fetch the result payload straight from LeetCode's API
-// //         const response = await fetch(details.url);
-// //         const data = await response.json();
+const processedSubmissionIds = new Set();
 
-// //         // status_msg "Accepted" maps to successful submission
-// //         if (data.status_msg === "Accepted") {
-// //           console.log("Background caught successful submission!", data);
-
-// //           // Broadcast this bundle straight to the open content script tab
-// //           chrome.tabs.sendMessage(details.tabId, {
-// //             action: "OPEN_SYNC_MODAL",
-// //             payload: {
-// //               code: data.code,
-// //               lang: data.lang,
-// //               questionId: data.question_id,
-// //               titleSlug: data.title_slug || "problem"
-// //             }
-// //           });
-// //         }
-// //       } catch (err) {
-// //         console.error("Error reading submission stream:", err);
-// //       }
-// //     }
-// //   },
-// //   { urls: ["https://*.leetcode.com/submissions/detail/*/check/"] }
-// // );
-
-// // Listen for completed background network requests on LeetCode
-// chrome.webRequest.onCompleted.addListener(
-//   async function(details) {
-//     // Target LeetCode's specific submission check endpoint
-//     // Example URL: https://leetcode.com/submissions/detail/2060875590/check/
-//     if (details.url.includes('/check/')) {
-//       try {
-//         // Extract the unique submission ID straight out of the URL path structure
-//         const urlParts = details.url.split('/');
-//         const detailIndex = urlParts.indexOf('detail');
-//         if (detailIndex === -1) return;
-//         const submissionId = urlParts[detailIndex + 1];
-
-//         // Fetch the check result status package
-//         const response = await fetch(details.url);
-//         const data = await response.json();
-
-//         // status_msg "Accepted" means it passed all test cases perfectly!
-//         if (data.status_msg === "Accepted") {
-//           console.log(`Success verified for Submission #${submissionId}. Fetching raw code asset...`);
-
-//           // Execute a clean background fetch to get the raw code payload safely 
-//           // away from LeetCode's frontend UI layout rules
-//           const shareUrl = `https://leetcode.com/submissions/detail/${submissionId}/share/`;
-//           const shareResponse = await fetch(shareUrl);
-//           const shareData = await shareResponse.json();
-          
-//           const rawCode = shareData.submission_code;
-
-//           if (rawCode) {
-//             console.log("Raw code successfully retrieved via API backend!");
-            
-//             // Broadcast the complete metadata + source code package straight to content.js
-//             chrome.tabs.sendMessage(details.tabId, {
-//               action: "OPEN_SYNC_MODAL",
-//               payload: {
-//                 code: rawCode,
-//                 lang: data.lang,
-//                 questionId: data.question_id,
-//                 titleSlug: data.title_slug || "problem"
-//               }
-//             });
-//           }
-//         }
-//       } catch (err) {
-//         console.error("Option B robust network intercept failed:", err);
-//       }
-//     }
-//   },
-//   { urls: ["https://*.leetcode.com/submissions/detail/*/check/"] }
-// );
-
-// Function to request submission details straight from LeetCode's official GraphQL API
 async function fetchSubmissionDetails(submissionId) {
   const graphqlUrl = "https://leetcode.com/graphql/";
-  
+
   // This is the exact query LeetCode uses to fetch code details
   const query = {
     query: `
@@ -119,6 +35,25 @@ async function fetchSubmissionDetails(submissionId) {
   return json?.data?.submissionDetails;
 }
 
+// NEW: resolves a valid tab to deliver the popup message to. Normally this
+// is just details.tabId, but Chrome sets tabId to -1 when the request that
+// triggered this listener wasn't tied to a normal tab (seen alongside
+// LeetCode's collaboration/WebSocket feature). In that case, fall back to
+// finding the active LeetCode tab directly.
+async function resolveTargetTabId(details) {
+  if (typeof details.tabId === 'number' && details.tabId >= 0) {
+    return details.tabId;
+  }
+
+  const tabs = await chrome.tabs.query({
+    active: true,
+    lastFocusedWindow: true,
+    url: "*://*.leetcode.com/*"
+  });
+
+  return tabs[0]?.id ?? null;
+}
+
 // Watch Chrome's network channel for the successful completion of a submission check
 chrome.webRequest.onCompleted.addListener(
   async function(details) {
@@ -130,21 +65,44 @@ chrome.webRequest.onCompleted.addListener(
         if (detailIndex === -1) return;
         const submissionId = urlParts[detailIndex + 1];
 
-        // Verify the verification response state matches "Accepted"
-        const response = await fetch(details.url);
+        // CHANGED: claim this submission ID immediately and synchronously,
+        // before any await. LeetCode fires several polls in quick succession
+        // right as a submission finishes; if we only marked "processed"
+        // after the fetch below, multiple polls could all pass this check
+        // before any of them finished awaiting, causing duplicate processing.
+        if (processedSubmissionIds.has(submissionId)) return;
+        processedSubmissionIds.add(submissionId);
+
+        const response = await fetch(details.url, { cache: "no-store" });
         const data = await response.json();
 
-        if (data.status_msg === "Accepted") {
-          console.log(`Submission #${submissionId} accepted! Querying GraphQL for raw assets...`);
+        if (data.status_msg !== "Accepted") {
+          // Not actually done yet (still Pending/etc) — release the claim
+          // so a later poll that IS "Accepted" can still be processed.
+          processedSubmissionIds.delete(submissionId);
+          return;
+        }
 
-          // Execute official GraphQL call directly using your browser's session
-          const detailsData = await fetchSubmissionDetails(submissionId);
+        console.log(`Submission #${submissionId} accepted! Querying GraphQL for raw assets...`);
 
-          if (detailsData && detailsData.statusCode === 10) {
-            console.log("Raw source code recovered from GraphQL safely!");
+        // Execute official GraphQL call directly using your browser's session
+        const detailsData = await fetchSubmissionDetails(submissionId);
 
-            // Send full package straight over to content.js
-            chrome.tabs.sendMessage(details.tabId, {
+        if (detailsData && detailsData.statusCode === 10) {
+          console.log("Raw source code recovered from GraphQL safely!");
+
+          // CHANGED: resolve a valid tab instead of trusting details.tabId directly
+          const targetTabId = await resolveTargetTabId(details);
+
+          if (targetTabId === null) {
+            console.warn(`Could not resolve a tab to deliver notes for submission ${submissionId}`);
+            return;
+          }
+
+          // Send full package straight over to content.js
+          chrome.tabs.sendMessage(
+            targetTabId,
+            {
               action: "OPEN_SYNC_MODAL",
               payload: {
                 code: detailsData.code,
@@ -152,8 +110,13 @@ chrome.webRequest.onCompleted.addListener(
                 questionId: detailsData.question.questionId,
                 titleSlug: detailsData.question.titleSlug
               }
-            });
-          }
+            },
+            () => {
+              if (chrome.runtime.lastError) {
+                console.warn("Could not reach content script:", chrome.runtime.lastError.message);
+              }
+            }
+          );
         }
       } catch (err) {
         console.error("GraphQL direct retrieval fallback failed:", err);
