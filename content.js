@@ -231,8 +231,31 @@ if (window.__ghSyncInitialized) {
     modalElement.style.display = 'flex';
   });
 
+  // NEW: detects when the extension was reloaded/updated while this page
+  // was already open — the old content script instance is left pointing at
+  // a dead context, and chrome.runtime.sendMessage throws an uncaught error.
+  // This checks for that upfront and fails gracefully via the toast instead.
+  function isExtensionContextValid() {
+    try {
+      return !!(chrome && chrome.runtime && chrome.runtime.id);
+    } catch (e) {
+      return false;
+    }
+  }
+
   formElement.onsubmit = (e) => {
     e.preventDefault();
+
+    if (!isExtensionContextValid()) {
+      showToast(
+        'error',
+        '⚠️ Extension was updated',
+        'This page is running an outdated copy of the extension. Please reload the page and try again.',
+        { showRetry: true }
+      );
+      modalElement.style.display = 'none';
+      return;
+    }
     
     const filename = document.getElementById('gh-filename').value;
     const ext = document.getElementById('gh-extension-select').value;
@@ -259,69 +282,85 @@ if (window.__ghSyncInitialized) {
 
     console.log(`Requesting AI notes for ${fullFilename}...`);
 
-    chrome.runtime.sendMessage(
-      {
-        action: "GENERATE_NOTES",
-        payload: {
-          code: scrapedProblemData.code,
-          lang: scrapedProblemData.lang,
-          noteStyle: noteStyle
-        }
-      },
-      (response) => {
-        if (response?.success) {
-          console.log(`=== AI NOTES (${fullFilename}) ===\n${response.notes}`);
+    try {
+      chrome.runtime.sendMessage(
+        {
+          action: "GENERATE_NOTES",
+          payload: {
+            code: scrapedProblemData.code,
+            lang: scrapedProblemData.lang,
+            noteStyle: noteStyle
+          }
+        },
+        (response) => {
+          if (!isExtensionContextValid()) return; // context died while waiting on the response
 
-          console.log(`Pushing ${fullFilename} and notes to GitHub...`);
+          if (response?.success) {
+            console.log(`=== AI NOTES (${fullFilename}) ===\n${response.notes}`);
 
-          chrome.runtime.sendMessage(
-            {
-              action: "PUSH_TO_GITHUB",
-              payload: {
-                folderPath,
-                codePath: repoPath,
-                titleSlug: scrapedProblemData.titleSlug,
-                fullFilename,
-                noteStyle,
-                notes: response.notes,
-                code: scrapedProblemData.code
+            console.log(`Pushing ${fullFilename} and notes to GitHub...`);
+
+            chrome.runtime.sendMessage(
+              {
+                action: "PUSH_TO_GITHUB",
+                payload: {
+                  folderPath,
+                  codePath: repoPath,
+                  titleSlug: scrapedProblemData.titleSlug,
+                  fullFilename,
+                  noteStyle,
+                  notes: response.notes,
+                  code: scrapedProblemData.code
+                }
+              },
+              (pushResponse) => {
+                if (!isExtensionContextValid()) return;
+
+                if (pushResponse?.success) {
+                  console.log("=== GITHUB PUSH SUCCESS ===");
+                  console.log("Notes file ->", pushResponse.mdPath);
+                  console.log("Code file  ->", pushResponse.codePath);
+
+                  showToast(
+                    'success',
+                    '✅ Pushed to GitHub',
+                    `${fullFilename} has been committed and pushed to ${folderPath}`
+                  );
+                } else {
+                  console.error("GitHub push failed:", pushResponse?.error);
+
+                  showToast(
+                    'error',
+                    '❌ GitHub push failed',
+                    pushResponse?.error || 'Unknown error occurred while pushing.',
+                    { showRetry: true }
+                  );
+                }
               }
-            },
-            (pushResponse) => {
-              if (pushResponse?.success) {
-                console.log("=== GITHUB PUSH SUCCESS ===");
-                console.log("Notes file ->", pushResponse.mdPath);
-                console.log("Code file  ->", pushResponse.codePath);
+            );
+          } else {
+            console.error(`AI note generation failed for ${fullFilename}:`, response?.error);
 
-                showToast(
-                  'success',
-                  '✅ Pushed to GitHub',
-                  `${fullFilename} has been committed and pushed to ${folderPath}`
-                );
-              } else {
-                console.error("GitHub push failed:", pushResponse?.error);
-
-                showToast(
-                  'error',
-                  '❌ GitHub push failed',
-                  pushResponse?.error || 'Unknown error occurred while pushing.',
-                  { showRetry: true }
-                );
-              }
-            }
-          );
-        } else {
-          console.error(`AI note generation failed for ${fullFilename}:`, response?.error);
-
-          showToast(
-            'error',
-            '❌ Note generation failed',
-            response?.error || 'Unknown error occurred while generating notes.',
-            { showRetry: true }
-          );
+            showToast(
+              'error',
+              '❌ Note generation failed',
+              response?.error || 'Unknown error occurred while generating notes.',
+              { showRetry: true }
+            );
+          }
         }
-      }
-    );
+      );
+    } catch (err) {
+      // Extension context invalidated mid-call (rare, but possible if the
+      // extension gets reloaded right as this fires).
+      console.error("Failed to send message — extension context likely invalidated:", err);
+      showToast(
+        'error',
+        '⚠️ Extension was updated',
+        'This page is running an outdated copy of the extension. Please reload the page and try again.',
+        { showRetry: true }
+      );
+    }
 
     modalElement.style.display = 'none';
   };
